@@ -2,8 +2,19 @@
 
 import { Column } from '@/components/Column';
 import { ColumnType, Task, TaskStatus } from '@/lib/types';
-import { DndContext, DragEndEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  DragStartEvent,
+  DragOverEvent,
+} from '@dnd-kit/core';
+import { arrayMove, SortableContext } from '@dnd-kit/sortable';
 import React, { useState } from 'react';
+import { TaskCard } from '@/components/TaskCard';
 
 const COLUMNS: ColumnType[] = [
   { id: TaskStatus.TODO, title: 'To do' },
@@ -11,100 +22,139 @@ const COLUMNS: ColumnType[] = [
   { id: TaskStatus.DONE, title: 'Done' },
 ];
 
-export const INITIAL_TASKS: Task[] = [
+const INITIAL_TASKS: Task[] = [
   {
     id: '1',
     title: 'Learn React',
-    description: 'Due to create user-friendly interfaces, learn React.',
+    description: 'Learn React basics.',
     status: TaskStatus.TODO,
   },
   {
     id: '2',
     title: 'Wash the car',
-    description: 'This task came from father :)',
-    status: TaskStatus.IN_PROGRESS,
+    description: 'Wash the car at 5 PM.',
+    status: TaskStatus.TODO,
   },
   {
     id: '3',
-    title: 'Call mom',
-    description: 'Someone take care of your nephew.',
-    status: TaskStatus.DONE,
+    title: 'Buy groceries',
+    description: 'Buy milk and bread.',
+    status: TaskStatus.IN_PROGRESS,
   },
   {
     id: '4',
-    title: 'Read a book',
-    description: 'Read 30 pages from a self-improvement book.',
-    status: TaskStatus.TODO,
-  },
-  {
-    id: '5',
-    title: 'Workout',
-    description: 'Go to the gym and complete a full-body workout.',
-    status: TaskStatus.IN_PROGRESS,
-  },
-  {
-    id: '6',
-    title: 'Grocery shopping',
-    description: 'Buy vegetables, milk, and other essentials.',
-    status: TaskStatus.DONE,
-  },
-  {
-    id: '7',
-    title: 'Complete project report',
-    description: 'Prepare the final version of the project report.',
-    status: TaskStatus.TODO,
-  },
-  {
-    id: '8',
-    title: 'Fix website bugs',
-    description: 'Debug and fix UI issues on the landing page.',
-    status: TaskStatus.IN_PROGRESS,
-  },
-  {
-    id: '9',
-    title: 'Plan weekend trip',
-    description: 'Search for locations and book a hotel.',
-    status: TaskStatus.TODO,
-  },
-  {
-    id: '10',
     title: 'Reply to emails',
-    description: 'Check inbox and respond to important emails.',
+    description: 'Check email inbox.',
     status: TaskStatus.DONE,
   },
 ];
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  // for mobile
+  const sensors = useSensors(
+    // distance means you need to move the “Task” by at least 5 pixels to make a drag
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const { active } = event;
+    const draggedTask = tasks.find((task) => task.id === active.id);
+    setActiveTask(draggedTask || null);
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    setActiveTask(null);
 
     if (!over) return;
 
     const taskId = active.id as string;
-    const newStatus = over.id as TaskStatus;
+    const overId = over.id as string;
 
-    setTasks(() =>
-      tasks.map((task) =>
-        task.id === taskId ? { ...task, status: newStatus } : task,
-      ),
-    );
+    const draggedTask = tasks.find((task) => task.id === taskId);
+    if (!draggedTask) return;
+
+    const oldColumnId = draggedTask.status;
+    const newColumnId = Object.values(TaskStatus).includes(overId as TaskStatus)
+      ? (overId as TaskStatus)
+      : draggedTask.status;
+
+    if (oldColumnId !== newColumnId) {
+      setTasks((prevTasks) =>
+        prevTasks.map((task) =>
+          task.id === taskId ? { ...task, status: newColumnId } : task,
+        ),
+      );
+    } else {
+      const columnTasks = tasks.filter((task) => task.status === newColumnId);
+      const oldIndex = columnTasks.findIndex((task) => task.id === taskId);
+      const newIndex = columnTasks.findIndex((task) => task.id === overId);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const sortedTasks = arrayMove(columnTasks, oldIndex, newIndex);
+        setTasks((prevTasks) =>
+          prevTasks
+            .filter((task) => task.status !== newColumnId)
+            .concat(sortedTasks),
+        );
+      }
+    }
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    const activeId = active.id as string;
+    const overId = over?.id as string;
+
+    const activeTask = tasks.find((task) => task.id === activeId);
+    const overTask = tasks.find((task) => task.id === overId);
+
+    if (!activeTask || !overTask) return;
+
+    const oldColumnId = activeTask.status;
+    const newColumnId = overTask.status;
+
+    if (oldColumnId !== newColumnId) {
+      setTasks((prevTasks) => {
+        const updatedTasks = prevTasks.filter((task) => task.id !== activeId);
+        const targetIndex = prevTasks.findIndex((task) => task.id === overId);
+
+        return [
+          ...updatedTasks.slice(0, targetIndex),
+          { ...activeTask, status: newColumnId },
+          ...updatedTasks.slice(targetIndex),
+        ];
+      });
+    }
   }
 
   return (
-    <div className="p-4">
-      <div className="flex gap-8">
-        <DndContext onDragEnd={handleDragEnd}>
-          {COLUMNS.map((column) => (
-            <Column
-              key={column.id}
-              column={column}
-              tasks={tasks.filter((task) => task.status === column.id)}
-            />
-          ))}
-        </DndContext>
-      </div>
+    <div className="p-10">
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+      >
+        <SortableContext items={tasks.map((task) => task.id)}>
+          <div className="flex gap-8">
+            {COLUMNS.map((column) => (
+              <Column
+                key={column.id}
+                column={column}
+                tasks={tasks.filter((task) => task.status === column.id)}
+              />
+            ))}
+          </div>
+        </SortableContext>
+
+        <DragOverlay>
+          {activeTask ? <TaskCard task={activeTask} isOverlay /> : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }

@@ -1,18 +1,26 @@
 import { Task } from '@/lib/types';
-import { useDraggable } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 type TaskCardProps = {
   task: Task;
+  isOverlay?: boolean;
 };
 
-export function TaskCard({ task }: TaskCardProps) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
-    id: task.id,
-  });
+export function TaskCard({ task, isOverlay = false }: TaskCardProps) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useSortable({
+      id: task.id,
+    });
 
-  const style = transform
-    ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
-    : undefined;
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? 'none' : 'transform 200ms ease',
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isOverlay ? 50 : 'auto',
+    position: isOverlay ? 'fixed' : 'relative',
+    width: '100%',
+  } as const;
 
   return (
     <div
