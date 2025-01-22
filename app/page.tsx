@@ -22,7 +22,10 @@ const COLUMNS: ColumnType[] = [
   { id: TaskStatus.DONE, title: 'Done' },
 ];
 
-export const INITIAL_TASKS: Task[] = [
+// Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used
+
+//////// why an error ocurred from export at following code
+const INITIAL_TASKS: Task[] = [
   {
     id: '1',
     title: 'Learn React',
