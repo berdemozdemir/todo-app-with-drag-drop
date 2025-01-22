@@ -27,7 +27,7 @@ export function TaskCard({ task, isOverlay = false }: TaskCardProps) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className="cursor-grab rounded-lg bg-neutral-700 p-4 shadow-sm hover:shadow-md"
+      className="cursor-grab touch-none rounded-lg bg-neutral-700 p-4 shadow-sm hover:shadow-md"
       style={style}
     >
       <h3 className="font-medium text-neutral-100">{task.title}</h3>
