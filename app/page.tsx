@@ -22,7 +22,7 @@ const COLUMNS: ColumnType[] = [
   { id: TaskStatus.DONE, title: 'Done' },
 ];
 
-const INITIAL_TASKS: Task[] = [
+export const INITIAL_TASKS: Task[] = [
   {
     id: '1',
     title: 'Learn React',
@@ -51,28 +51,42 @@ const INITIAL_TASKS: Task[] = [
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+  const [columns, setColumns] = useState<ColumnType[]>(COLUMNS);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeColumn, setActiveColumn] = useState<ColumnType | null>(null);
 
-  // for mobile
   const sensors = useSensors(
-    // distance means you need to move the “Task” by at least 5 pixels to make a drag
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
   function handleDragStart(event: DragStartEvent) {
     const { active } = event;
     const draggedTask = tasks.find((task) => task.id === active.id);
-    setActiveTask(draggedTask || null);
+    if (draggedTask) {
+      setActiveTask(draggedTask);
+      return;
+    }
+
+    const draggedColumn = columns.find((column) => column.id === active.id);
+    if (draggedColumn) {
+      setActiveColumn(draggedColumn);
+    }
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveTask(null);
+    setActiveColumn(null);
 
     if (!over) return;
 
     const taskId = active.id as string;
     const overId = over.id as string;
+
+    if (Object.values(TaskStatus).includes(taskId as TaskStatus)) {
+      handleColumnDragEnd(event);
+      return;
+    }
 
     const draggedTask = tasks.find((task) => task.id === taskId);
     if (!draggedTask) return;
@@ -94,6 +108,7 @@ export default function Home() {
       const newIndex = columnTasks.findIndex((task) => task.id === overId);
 
       if (oldIndex !== -1 && newIndex !== -1) {
+        if (oldIndex === newIndex) return;
         const sortedTasks = arrayMove(columnTasks, oldIndex, newIndex);
         setTasks((prevTasks) =>
           prevTasks
@@ -106,21 +121,25 @@ export default function Home() {
 
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
+    if (!over) return;
+
     const activeId = active.id as string;
-    const overId = over?.id as string;
+    const overId = over.id as string;
 
     const activeTask = tasks.find((task) => task.id === activeId);
     const overTask = tasks.find((task) => task.id === overId);
 
-    if (!activeTask || !overTask) return;
+    if (!activeTask) return;
 
     const oldColumnId = activeTask.status;
-    const newColumnId = overTask.status;
+    const newColumnId = overTask ? overTask.status : (overId as TaskStatus);
 
     if (oldColumnId !== newColumnId) {
       setTasks((prevTasks) => {
         const updatedTasks = prevTasks.filter((task) => task.id !== activeId);
-        const targetIndex = prevTasks.findIndex((task) => task.id === overId);
+        const targetIndex = overTask
+          ? prevTasks.findIndex((task) => task.id === overId)
+          : -1;
 
         return [
           ...updatedTasks.slice(0, targetIndex),
@@ -128,6 +147,18 @@ export default function Home() {
           ...updatedTasks.slice(targetIndex),
         ];
       });
+    }
+  }
+
+  function handleColumnDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+
+    const oldIndex = columns.findIndex((col) => col.id === active.id);
+    const newIndex = columns.findIndex((col) => col.id === over.id);
+
+    if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+      setColumns(arrayMove(columns, oldIndex, newIndex));
     }
   }
 
@@ -139,9 +170,9 @@ export default function Home() {
         onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}
       >
-        <SortableContext items={tasks.map((task) => task.id)}>
+        <SortableContext items={columns.map((column) => column.id)}>
           <div className="flex gap-8">
-            {COLUMNS.map((column) => (
+            {columns.map((column) => (
               <Column
                 key={column.id}
                 column={column}
@@ -153,6 +184,13 @@ export default function Home() {
 
         <DragOverlay>
           {activeTask ? <TaskCard task={activeTask} isOverlay /> : null}
+
+          {activeColumn ? (
+            <Column
+              column={activeColumn}
+              tasks={tasks.filter((task) => task.status === activeColumn.id)}
+            />
+          ) : null}
         </DragOverlay>
       </DndContext>
     </div>
