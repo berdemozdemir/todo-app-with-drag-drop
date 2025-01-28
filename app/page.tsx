@@ -13,7 +13,7 @@ import {
   DragEndEvent,
 } from '@dnd-kit/core';
 import { arrayMove, SortableContext } from '@dnd-kit/sortable';
-import React, { act, useState } from 'react';
+import React, { useState } from 'react';
 import { TaskCard } from '@/components/TaskCard';
 import { useGetColumnQuery, useUpdateColumnsMutation } from '@/lib/services';
 
@@ -29,6 +29,89 @@ export default function Home() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
+
+  function handleDragStart(event: DragStartEvent) {
+    const { active } = event;
+    if (active.data.current?.type === 'Task') {
+      setActiveTask(active.data.current.task);
+    } else if (active.data.current?.type === 'Column') {
+      setActiveColumn(active.data.current.column);
+    }
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over || !columns) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    let updatedColumns: typeof columns = JSON.parse(JSON.stringify(columns));
+
+    const activeColumnIndex = updatedColumns.findIndex((col) =>
+      col.tasks.some((task) => task.id === activeId),
+    );
+
+    const overColumnIndex = updatedColumns.findIndex(
+      (col) =>
+        col.id === overId || col.tasks.some((task) => task.id === overId),
+    );
+
+    if (activeColumnIndex === -1 || overColumnIndex === -1) return;
+
+    const activeTask = updatedColumns[activeColumnIndex].tasks.find(
+      (task) => task.id === activeId,
+    );
+
+    if (!activeTask) return;
+
+    if (activeColumnIndex === overColumnIndex) {
+      const overTaskIndex = updatedColumns[overColumnIndex].tasks.findIndex(
+        (task) => task.id === overId,
+      );
+
+      const activeTaskIndex = updatedColumns[activeColumnIndex].tasks.findIndex(
+        (task) => task.id === activeId,
+      );
+
+      if (activeTaskIndex === overTaskIndex) return; // 🔹 Sonsuz döngüyü önle
+
+      updatedColumns[overColumnIndex].tasks = arrayMove(
+        updatedColumns[overColumnIndex].tasks,
+        activeTaskIndex,
+        overTaskIndex,
+      );
+    } else {
+      updatedColumns[activeColumnIndex].tasks = updatedColumns[
+        activeColumnIndex
+      ].tasks.filter((t) => t.id !== activeId);
+
+      const overTaskIndex = updatedColumns[overColumnIndex].tasks.findIndex(
+        (task) => task.id === overId,
+      );
+
+      if (overTaskIndex !== -1) {
+        updatedColumns[overColumnIndex].tasks.splice(
+          overTaskIndex,
+          0,
+          activeTask,
+        );
+      } else {
+        updatedColumns[overColumnIndex].tasks.push(activeTask);
+      }
+    }
+
+    updatedColumns[overColumnIndex].tasks = updatedColumns[
+      overColumnIndex
+    ].tasks.map((task, index) => ({ ...task, order: index + 1 }));
+
+    const prevColumns = JSON.stringify(columns);
+    const newColumns = JSON.stringify(updatedColumns);
+
+    if (prevColumns !== newColumns) {
+      updateColumnsMutation.mutate(updatedColumns);
+    }
+  }
 
   function handleDragColumnEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -57,15 +140,6 @@ export default function Home() {
     }
   }
 
-  function handleDragStart(event: DragStartEvent) {
-    const { active } = event;
-    if (active.data.current?.type === 'Task') {
-      setActiveTask(active.data.current.task);
-    } else if (active.data.current?.type === 'Column') {
-      setActiveColumn(active.data.current.column);
-    }
-  }
-
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
 
@@ -77,14 +151,12 @@ export default function Home() {
     const activeId = active.id;
     const overId = over.id;
 
-    // 🛠 If a column is dragged
     if (active.data.current?.type === 'Column') {
       handleDragColumnEnd(event);
       return;
     }
 
-    // 🛠 If a task is dragged
-    else if (active.data.current?.type === 'Task') {
+    if (active.data.current?.type === 'Task') {
       const activeColumn = columns.find((col) =>
         col.tasks.some((task) => task.id === activeId),
       );
@@ -94,12 +166,9 @@ export default function Home() {
       let overColumn: ColumnType | undefined;
       let overTask: TaskType | undefined;
 
-      // 🛠 If the task is dropped onto a column
       if (over.data.current?.type === 'Column') {
         overColumn = columns.find((col) => col.id === overId);
-      }
-      // 🛠 If the task is dropped onto another task
-      else {
+      } else {
         overColumn = columns.find((col) =>
           col.tasks.some((task) => task.id === overId),
         );
@@ -110,7 +179,6 @@ export default function Home() {
 
       let updatedColumns: typeof columns = JSON.parse(JSON.stringify(columns));
 
-      // 🛠 1️⃣ If the task is reordered within the same column
       if (activeColumn.id === overColumn.id) {
         if (!overTask) return;
 
@@ -128,17 +196,13 @@ export default function Home() {
           ...updatedColumns[activeColumnIndex].tasks[activeTaskIndex],
         };
 
-        // 🎯 Remove the task from the old position
         updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
-
-        // 🎯 Insert the task at the new position
         updatedColumns[activeColumnIndex].tasks.splice(
           overTaskIndex,
           0,
           activeTask,
         );
 
-        // 🛠 Update the order of all tasks in the column
         updatedColumns = updatedColumns.map((d, i) => ({
           ...d,
           order: i + 1,
@@ -149,9 +213,7 @@ export default function Home() {
         }));
 
         updateColumnsMutation.mutate(updatedColumns);
-      }
-      // 🛠 2️⃣ If the task is moved to another column
-      else {
+      } else {
         const activeColumnIndex = updatedColumns.findIndex(
           (column) => column.id === activeColumn.id,
         );
@@ -167,7 +229,6 @@ export default function Home() {
         const activeTask =
           updatedColumns[activeColumnIndex].tasks[activeTaskIndex];
 
-        // 🎯 Remove the task from the old column
         updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
 
         const overColumnIndex = updatedColumns.findIndex(
@@ -176,10 +237,8 @@ export default function Home() {
 
         if (overColumnIndex === -1) return;
 
-        // 🎯 Add the task to the new column
         updatedColumns[overColumnIndex].tasks.push(activeTask);
 
-        // 🛠 Update the order of tasks in the new column
         updatedColumns[overColumnIndex].tasks = updatedColumns[
           overColumnIndex
         ].tasks.map((task, taskIndex) => ({ ...task, order: taskIndex + 1 }));
@@ -188,47 +247,6 @@ export default function Home() {
       }
     }
   }
-
-  // function handleDragOver(event: DragOverEvent) {
-  //   const { active, over } = event;
-  //   if (!over || !columns) return;
-
-  //   const activeId = active.id;
-  //   const overId = over.id;
-
-  //   const updatedColumns = [...columns];
-
-  //   const activeColumnIndex = updatedColumns.findIndex((col) =>
-  //     col.tasks.some((task) => task.id === activeId),
-  //   );
-
-  //   const overColumnIndex = updatedColumns.findIndex(
-  //     (col) =>
-  //       col.id === overId || col.tasks.some((task) => task.id === overId),
-  //   );
-
-  //   if (activeColumnIndex !== -1 && overColumnIndex !== -1) {
-  //     const task = updatedColumns[activeColumnIndex].tasks.find(
-  //       (task) => task.id === activeId,
-  //     );
-
-  //     if (task) {
-  //       updatedColumns[activeColumnIndex].tasks = updatedColumns[
-  //         activeColumnIndex
-  //       ].tasks.filter((t) => t.id !== activeId);
-
-  //       updatedColumns[overColumnIndex].tasks.push({
-  //         ...task,
-  //         order: updatedColumns[overColumnIndex].tasks.length + 1,
-  //       });
-
-  //       updateColumnsMutation.mutate(updatedColumns);
-  //     }
-  //   }
-
-  //   setActiveTask(null);
-  //   setActiveColumn(null);
-  // }
 
   if (isLoading) return <div>Loading...</div>;
   if (isError) return <div>Error fetching data</div>;
@@ -239,7 +257,7 @@ export default function Home() {
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
-        // onDragOver={handleDragOver}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={columns.map((column) => column.id)}>
