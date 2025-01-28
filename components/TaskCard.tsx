@@ -1,9 +1,9 @@
-import { Task } from '@/lib/types';
+import { TaskType } from '@/lib/types';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 type TaskCardProps = {
-  task: Task;
+  task: TaskType;
   isOverlay?: boolean;
 };
 
@@ -11,6 +11,10 @@ export function TaskCard({ task, isOverlay = false }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useSortable({
       id: task.id,
+      data: {
+        type: 'Task',
+        task,
+      },
     });
 
   const style = {
