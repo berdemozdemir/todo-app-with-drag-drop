@@ -1,199 +1,246 @@
 'use client';
 
 import { Column } from '@/components/Column';
-import { ColumnType, Task, TaskStatus } from '@/lib/types';
+import { ColumnType, TaskType } from '@/lib/types';
 import {
   DndContext,
-  DragEndEvent,
   DragOverlay,
   useSensor,
   useSensors,
   PointerSensor,
   DragStartEvent,
   DragOverEvent,
+  DragEndEvent,
 } from '@dnd-kit/core';
 import { arrayMove, SortableContext } from '@dnd-kit/sortable';
-import React, { useState } from 'react';
+import React, { act, useState } from 'react';
 import { TaskCard } from '@/components/TaskCard';
-
-const COLUMNS: ColumnType[] = [
-  { id: TaskStatus.TODO, title: 'To do' },
-  { id: TaskStatus.IN_PROGRESS, title: 'In Progress' },
-  { id: TaskStatus.DONE, title: 'Done' },
-];
-
-// Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used
-
-//////// why an error ocurred from export at following code
-const INITIAL_TASKS: Task[] = [
-  {
-    id: '1',
-    title: 'Learn React',
-    description: 'Learn React basics.',
-    status: TaskStatus.TODO,
-  },
-  {
-    id: '2',
-    title: 'Wash the car',
-    description: 'Wash the car at 5 PM.',
-    status: TaskStatus.TODO,
-  },
-  {
-    id: '3',
-    title: 'Buy groceries',
-    description: 'Buy milk and bread.',
-    status: TaskStatus.IN_PROGRESS,
-  },
-  {
-    id: '4',
-    title: 'Reply to emails',
-    description: 'Check email inbox.',
-    status: TaskStatus.DONE,
-  },
-];
+import { useGetColumnQuery, useUpdateColumnsMutation } from '@/lib/services';
 
 export default function Home() {
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
-  const [columns, setColumns] = useState<ColumnType[]>(COLUMNS);
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const { data, isLoading, isError } = useGetColumnQuery();
+  const updateColumnsMutation = useUpdateColumnsMutation();
+
+  const columns = Array.isArray(data) ? data : [];
+
+  const [activeTask, setActiveTask] = useState<TaskType | null>(null);
   const [activeColumn, setActiveColumn] = useState<ColumnType | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
+  function handleDragColumnEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    const updatedColumns: typeof columns = JSON.parse(JSON.stringify(columns));
+
+    const oldColumnIndex = updatedColumns.findIndex(
+      (column) => column.id === activeId,
+    );
+
+    const NewColumnIndex = updatedColumns.findIndex(
+      (column) => column.id === overId,
+    );
+
+    if (oldColumnIndex !== -1 && NewColumnIndex !== -1) {
+      const newColumns = arrayMove(columns, oldColumnIndex, NewColumnIndex).map(
+        (col, index) => ({ ...col, order: index + 1 }),
+      );
+
+      updateColumnsMutation.mutate(newColumns);
+    }
+  }
+
   function handleDragStart(event: DragStartEvent) {
     const { active } = event;
-    const draggedTask = tasks.find((task) => task.id === active.id);
-    if (draggedTask) {
-      setActiveTask(draggedTask);
-      return;
-    }
-
-    const draggedColumn = columns.find((column) => column.id === active.id);
-    if (draggedColumn) {
-      setActiveColumn(draggedColumn);
+    if (active.data.current?.type === 'Task') {
+      setActiveTask(active.data.current.task);
+    } else if (active.data.current?.type === 'Column') {
+      setActiveColumn(active.data.current.column);
     }
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+
     setActiveTask(null);
     setActiveColumn(null);
 
-    if (!over) return;
+    if (!over || !columns) return;
 
-    const taskId = active.id as string;
-    const overId = over.id as string;
+    const activeId = active.id;
+    const overId = over.id;
 
-    if (Object.values(TaskStatus).includes(taskId as TaskStatus)) {
-      handleColumnDragEnd(event);
+    if (active.data.current?.type === 'Column') {
+      handleDragColumnEnd(event);
+
       return;
-    }
-
-    const draggedTask = tasks.find((task) => task.id === taskId);
-    if (!draggedTask) return;
-
-    const oldColumnId = draggedTask.status;
-    const newColumnId = Object.values(TaskStatus).includes(overId as TaskStatus)
-      ? (overId as TaskStatus)
-      : draggedTask.status;
-
-    if (oldColumnId !== newColumnId) {
-      setTasks((prevTasks) =>
-        prevTasks.map((task) =>
-          task.id === taskId ? { ...task, status: newColumnId } : task,
-        ),
+    } else if (active.data.current?.type === 'Task') {
+      const activeColumn = columns.find((col) =>
+        col.tasks.some((task) => task.id === activeId),
       );
-    } else {
-      const columnTasks = tasks.filter((task) => task.status === newColumnId);
-      const oldIndex = columnTasks.findIndex((task) => task.id === taskId);
-      const newIndex = columnTasks.findIndex((task) => task.id === overId);
 
-      if (oldIndex !== -1 && newIndex !== -1) {
-        if (oldIndex === newIndex) return;
-        const sortedTasks = arrayMove(columnTasks, oldIndex, newIndex);
-        setTasks((prevTasks) =>
-          prevTasks
-            .filter((task) => task.status !== newColumnId)
-            .concat(sortedTasks),
+      if (!activeColumn) return;
+
+      let overColumn: ColumnType | undefined;
+      let overTask: TaskType | undefined;
+
+      if (over.data.current!.type === 'Column') {
+        overColumn = columns.find((col) => col.id === overId);
+      } else {
+        overColumn = columns.find((col) =>
+          col.tasks.some((task) => task.id === overId),
         );
+
+        overTask = overColumn?.tasks.find((task) => task.id === overId);
+      }
+
+      if (!overColumn) return;
+
+      let updatedColumns: typeof columns = JSON.parse(JSON.stringify(columns));
+
+      if (activeColumn.id === overColumn.id) {
+        if (!overTask) return;
+
+        // this means task reordered in same column
+        const activeColumnIndex = updatedColumns.findIndex(
+          (d) => d.id === activeColumn.id,
+        );
+
+        const activeTaskIndex = updatedColumns[
+          activeColumnIndex
+        ].tasks.findIndex((d) => d.id === activeId);
+
+        const overTaskIndex = overColumn.tasks.indexOf(overTask);
+
+        const activeTask = {
+          ...updatedColumns[activeColumnIndex].tasks[activeTaskIndex],
+        };
+
+        const overColumnIndex = updatedColumns.findIndex(
+          (d) => d.id === overColumn.id,
+        );
+
+        updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
+
+        // move to new
+        updatedColumns[overColumnIndex].tasks.splice(
+          overTaskIndex,
+          0,
+          activeTask,
+        );
+
+        // delete from old
+        updatedColumns = updatedColumns.map((d, i) => ({
+          ...d,
+          order: i + 1,
+          tasks: d.tasks.map((task, taskIndex) => ({
+            ...task,
+            order: taskIndex + 1,
+          })),
+        }));
+
+        updateColumnsMutation.mutate(updatedColumns);
+      } else {
+        // this means task moved in to another column
+        const activeColumnIndex = updatedColumns.findIndex(
+          (column) => column.id === activeId,
+        );
+
+        const activeColumn = updatedColumns[activeColumnIndex];
+
+        let activeTaskIndex = activeColumn?.tasks.findIndex(
+          (task) => task.id === activeId,
+        );
+
+        const activeTask =
+          updatedColumns[activeColumnIndex].tasks[activeTaskIndex];
+
+        const overColumnIndex = updatedColumns.findIndex(
+          (d) => d.id === overId,
+        );
+
+        if (over.data.current?.type === 'Column') {
+          updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
+
+          updatedColumns[overColumnIndex].tasks.push(activeTask);
+        }
+
+        console.log({ over, active });
       }
     }
   }
 
-  function handleDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over) return;
+  // function handleDragOver(event: DragOverEvent) {
+  //   const { active, over } = event;
+  //   if (!over || !columns) return;
 
-    const activeId = active.id as string;
-    const overId = over.id as string;
+  //   const activeId = active.id;
+  //   const overId = over.id;
 
-    const activeTask = tasks.find((task) => task.id === activeId);
-    const overTask = tasks.find((task) => task.id === overId);
+  //   const updatedColumns = [...columns];
 
-    if (!activeTask) return;
+  //   const activeColumnIndex = updatedColumns.findIndex((col) =>
+  //     col.tasks.some((task) => task.id === activeId),
+  //   );
 
-    const oldColumnId = activeTask.status;
-    const newColumnId = overTask ? overTask.status : (overId as TaskStatus);
+  //   const overColumnIndex = updatedColumns.findIndex(
+  //     (col) =>
+  //       col.id === overId || col.tasks.some((task) => task.id === overId),
+  //   );
 
-    if (oldColumnId !== newColumnId) {
-      setTasks((prevTasks) => {
-        const updatedTasks = prevTasks.filter((task) => task.id !== activeId);
-        const targetIndex = overTask
-          ? prevTasks.findIndex((task) => task.id === overId)
-          : -1;
+  //   if (activeColumnIndex !== -1 && overColumnIndex !== -1) {
+  //     const task = updatedColumns[activeColumnIndex].tasks.find(
+  //       (task) => task.id === activeId,
+  //     );
 
-        return [
-          ...updatedTasks.slice(0, targetIndex),
-          { ...activeTask, status: newColumnId },
-          ...updatedTasks.slice(targetIndex),
-        ];
-      });
-    }
-  }
+  //     if (task) {
+  //       updatedColumns[activeColumnIndex].tasks = updatedColumns[
+  //         activeColumnIndex
+  //       ].tasks.filter((t) => t.id !== activeId);
 
-  function handleColumnDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over) return;
+  //       updatedColumns[overColumnIndex].tasks.push({
+  //         ...task,
+  //         order: updatedColumns[overColumnIndex].tasks.length + 1,
+  //       });
 
-    const oldIndex = columns.findIndex((col) => col.id === active.id);
-    const newIndex = columns.findIndex((col) => col.id === over.id);
+  //       updateColumnsMutation.mutate(updatedColumns);
+  //     }
+  //   }
 
-    if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-      setColumns(arrayMove(columns, oldIndex, newIndex));
-    }
-  }
+  //   setActiveTask(null);
+  //   setActiveColumn(null);
+  // }
+
+  if (isLoading) return <div>Loading...</div>;
+  if (isError) return <div>Error fetching data</div>;
+  if (!columns || columns.length === 0) return <div>No Columns yet!</div>;
 
   return (
     <div className="p-10">
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
+        // onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
       >
         <SortableContext items={columns.map((column) => column.id)}>
           <div className="flex gap-8">
             {columns.map((column) => (
-              <Column
-                key={column.id}
-                column={column}
-                tasks={tasks.filter((task) => task.status === column.id)}
-              />
+              <Column key={column.id} column={column} />
             ))}
           </div>
         </SortableContext>
 
         <DragOverlay>
           {activeTask ? <TaskCard task={activeTask} isOverlay /> : null}
-
-          {activeColumn ? (
-            <Column
-              column={activeColumn}
-              tasks={tasks.filter((task) => task.status === activeColumn.id)}
-            />
-          ) : null}
+          {activeColumn ? <Column column={activeColumn} /> : null}
         </DragOverlay>
       </DndContext>
     </div>

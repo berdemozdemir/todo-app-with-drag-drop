@@ -12,7 +12,7 @@ export type ColumnType = {
   tasks: TaskType[];
 };
 
-export const INITIAL_COLUMNS: ColumnType[] = [
+export let INITIAL_COLUMNS: ColumnType[] = [
   {
     id: 1,
     title: 'To Do',
@@ -21,13 +21,19 @@ export const INITIAL_COLUMNS: ColumnType[] = [
       {
         id: 11,
         title: 'Learn React',
-        order: 1,
+        order: 2,
         description: 'Learn React basics.',
       },
       {
         id: 12,
-        order: 2,
+        order: 1,
         title: 'Setup Project',
+        description: 'Initialize new project.',
+      },
+      {
+        id: 332,
+        order: 3,
+        title: 'Y Project',
         description: 'Initialize new project.',
       },
     ],
@@ -38,7 +44,7 @@ export const INITIAL_COLUMNS: ColumnType[] = [
     order: 2,
     tasks: [
       {
-        id: 12,
+        id: 13,
         title: 'Fix Bugs',
         order: 1,
         description: 'Resolve reported issues.',
@@ -48,7 +54,7 @@ export const INITIAL_COLUMNS: ColumnType[] = [
   {
     id: 3,
     title: 'Done',
-    order: 1,
+    order: 3,
     tasks: [],
   },
 ];
