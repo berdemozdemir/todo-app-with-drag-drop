@@ -77,11 +77,14 @@ export default function Home() {
     const activeId = active.id;
     const overId = over.id;
 
+    // 🛠 If a column is dragged
     if (active.data.current?.type === 'Column') {
       handleDragColumnEnd(event);
-
       return;
-    } else if (active.data.current?.type === 'Task') {
+    }
+
+    // 🛠 If a task is dragged
+    else if (active.data.current?.type === 'Task') {
       const activeColumn = columns.find((col) =>
         col.tasks.some((task) => task.id === activeId),
       );
@@ -91,13 +94,15 @@ export default function Home() {
       let overColumn: ColumnType | undefined;
       let overTask: TaskType | undefined;
 
-      if (over.data.current!.type === 'Column') {
+      // 🛠 If the task is dropped onto a column
+      if (over.data.current?.type === 'Column') {
         overColumn = columns.find((col) => col.id === overId);
-      } else {
+      }
+      // 🛠 If the task is dropped onto another task
+      else {
         overColumn = columns.find((col) =>
           col.tasks.some((task) => task.id === overId),
         );
-
         overTask = overColumn?.tasks.find((task) => task.id === overId);
       }
 
@@ -105,10 +110,10 @@ export default function Home() {
 
       let updatedColumns: typeof columns = JSON.parse(JSON.stringify(columns));
 
+      // 🛠 1️⃣ If the task is reordered within the same column
       if (activeColumn.id === overColumn.id) {
         if (!overTask) return;
 
-        // this means task reordered in same column
         const activeColumnIndex = updatedColumns.findIndex(
           (d) => d.id === activeColumn.id,
         );
@@ -123,20 +128,17 @@ export default function Home() {
           ...updatedColumns[activeColumnIndex].tasks[activeTaskIndex],
         };
 
-        const overColumnIndex = updatedColumns.findIndex(
-          (d) => d.id === overColumn.id,
-        );
-
+        // 🎯 Remove the task from the old position
         updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
 
-        // move to new
-        updatedColumns[overColumnIndex].tasks.splice(
+        // 🎯 Insert the task at the new position
+        updatedColumns[activeColumnIndex].tasks.splice(
           overTaskIndex,
           0,
           activeTask,
         );
 
-        // delete from old
+        // 🛠 Update the order of all tasks in the column
         updatedColumns = updatedColumns.map((d, i) => ({
           ...d,
           order: i + 1,
@@ -147,32 +149,42 @@ export default function Home() {
         }));
 
         updateColumnsMutation.mutate(updatedColumns);
-      } else {
-        // this means task moved in to another column
+      }
+      // 🛠 2️⃣ If the task is moved to another column
+      else {
         const activeColumnIndex = updatedColumns.findIndex(
-          (column) => column.id === activeId,
+          (column) => column.id === activeColumn.id,
         );
 
-        const activeColumn = updatedColumns[activeColumnIndex];
+        if (activeColumnIndex === -1) return;
 
-        let activeTaskIndex = activeColumn?.tasks.findIndex(
-          (task) => task.id === activeId,
-        );
+        const activeTaskIndex = updatedColumns[
+          activeColumnIndex
+        ].tasks.findIndex((task) => task.id === activeId);
+
+        if (activeTaskIndex === -1) return;
 
         const activeTask =
           updatedColumns[activeColumnIndex].tasks[activeTaskIndex];
 
+        // 🎯 Remove the task from the old column
+        updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
+
         const overColumnIndex = updatedColumns.findIndex(
-          (d) => d.id === overId,
+          (d) => d.id === overColumn?.id,
         );
 
-        if (over.data.current?.type === 'Column') {
-          updatedColumns[activeColumnIndex].tasks.splice(activeTaskIndex, 1);
+        if (overColumnIndex === -1) return;
 
-          updatedColumns[overColumnIndex].tasks.push(activeTask);
-        }
+        // 🎯 Add the task to the new column
+        updatedColumns[overColumnIndex].tasks.push(activeTask);
 
-        console.log({ over, active });
+        // 🛠 Update the order of tasks in the new column
+        updatedColumns[overColumnIndex].tasks = updatedColumns[
+          overColumnIndex
+        ].tasks.map((task, taskIndex) => ({ ...task, order: taskIndex + 1 }));
+
+        updateColumnsMutation.mutate(updatedColumns);
       }
     }
   }
